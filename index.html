@@ -952,7 +952,7 @@ body.readonly select.pn-sel,body.readonly input.pn-inp{pointer-events:none;opaci
   .rem-caja{display:flex;justify-content:space-between;align-items:baseline;border:1px solid #444;border-bottom:0;padding:6px 9px;font-weight:700;font-size:13px;letter-spacing:.04em}
   .rem-vfy{font-weight:400;font-size:12px}
   table.rem-t{width:100%;border-collapse:collapse;font-size:11.5px}
-  .rem-t th,.rem-t td{border:1px solid #666;padding:4px 6px;text-align:left;vertical-align:top}
+  .rem-t th,.rem-t td{border:1px solid #666;padding:4px 6px;text-align:left;vertical-align:top;background:#fff!important;color:#1a1a1a!important}
   .rem-t thead{display:table-header-group}
   .rem-t th{font-size:10px;letter-spacing:.08em;text-transform:uppercase}
   .rem-t tr{page-break-inside:avoid}
@@ -2250,7 +2250,11 @@ function remTabla(items){
 function buildRemitoHTML(veh){
   var items=PANOL.filter(function(it){return effTr(it)===veh;});
   var porCaja={}, sueltos=[];
-  items.forEach(function(it){ var c=nrm(it.ubf); if(c){(porCaja[c]=porCaja[c]||[]).push(it);} else sueltos.push(it); });
+  items.forEach(function(it){
+    var c=nrm(it.ubf);
+    if(!c||/^suelto/i.test(c)||c==='—'||c==='-'){ sueltos.push(it); }
+    else{ (porCaja[c]=porCaja[c]||[]).push(it); }
+  });
   var cajas=Object.keys(porCaja).sort(function(a,b){
     var ra=cajaRank(a),rb=cajaRank(b); if(ra!==rb)return ra-rb;
     return a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'});
