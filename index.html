@@ -1895,8 +1895,8 @@ function applyAllGs(){
 }
 
 /* ============ sincronización con Google Sheets ============ */
-var SHEET_H='1aKmeOqI2nmlYszsjU8zdom6fCJn-fA6i';
-function gvizUrl(id,tab){ return 'https://docs.google.com/spreadsheets/d/'+id+'/gviz/tq?tqx=out:csv&sheet='+encodeURIComponent(tab); }
+var SHEET_H='1aKmeOqI2nmlYszsjU8zdom6fCJn-fA6i', GID_H='1077869786';
+function csvUrl(id,gid){ return 'https://docs.google.com/spreadsheets/d/'+id+'/export?format=csv&gid='+gid; }
 function parseCSV(text){
   var rows=[],row=[],cur='',q=false;
   for(var i=0;i<text.length;i++){
@@ -2007,7 +2007,7 @@ function syncHerr(){
   var box=$('#syncHBox'), btn=$('#btnSyncH');
   btn.disabled=true; box.style.display='block';
   box.innerHTML='<span class="rol">Leyendo la planilla de Google Sheets…</span>';
-  fetch(gvizUrl(SHEET_H,'Maestro'))
+  fetch(csvUrl(SHEET_H,GID_H))
   .then(function(r){ if(!r.ok)throw new Error('HTTP '+r.status); return r.text(); })
   .then(function(txt){
     if(/^\s*</.test(txt))throw new Error('no-csv');
@@ -2107,32 +2107,47 @@ function askGanttSheet(){
   var box=$('#syncGBox'), btn=$('#btnSyncG');
   box.style.display='block'; box.innerHTML='';
   var p=document.createElement('div');
-  p.innerHTML='<b>Vinculá la planilla de Gantts.</b><br><span class="rol">Pegá el enlace (o el ID) de la planilla «PPA2026 – Gantts» de Google Sheets. Tiene que tener las pestañas <b>GanttVentiladores</b> y <b>GanttEND</b>, y estar compartida como «Cualquier persona con el enlace: Lector». Se guarda una sola vez, para todos.</span>';
+  p.innerHTML='<b>Vinculá la planilla de Gantts.</b><br><span class="rol">Abrí la planilla «PPA2026 – Gantts» en Google Sheets, pará sobre cada pestaña y copiá el enlace del navegador (cambia el número «gid» al cambiar de pestaña). Tiene que estar compartida como «Cualquier persona con el enlace: Lector». Se guarda una sola vez, para todos.</span>';
   box.appendChild(p);
-  var bar=document.createElement('div'); bar.style.marginTop='8px';
-  var inp=document.createElement('input'); inp.type='text'; inp.placeholder='https://docs.google.com/spreadsheets/d/…';
-  inp.style.cssText='font-family:var(--fb);font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:7px 10px;width:min(420px,90%)';
-  var ok=document.createElement('button'); ok.className='btn-min'; ok.textContent='Guardar y actualizar'; ok.style.marginLeft='8px';
+  function fila(label,ph){
+    var d=document.createElement('div'); d.style.marginTop='8px';
+    var l=document.createElement('span'); l.className='rol'; l.textContent=label; l.style.cssText='display:inline-block;width:190px';
+    var inp=document.createElement('input'); inp.type='text'; inp.placeholder=ph;
+    inp.style.cssText='font-family:var(--fb);font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:7px 10px;width:min(380px,60%)';
+    d.appendChild(l); d.appendChild(inp); box.appendChild(d);
+    return inp;
+  }
+  var inpV=fila('Pestaña GanttVentiladores:','https://docs.google.com/…#gid=…');
+  var inpE=fila('Pestaña GanttEND:','https://docs.google.com/…#gid=…');
+  var bar=document.createElement('div'); bar.style.marginTop='10px';
+  var ok=document.createElement('button'); ok.className='btn-min'; ok.textContent='Guardar y actualizar';
   var no=document.createElement('button'); no.className='btn-min'; no.textContent='Cancelar'; no.style.marginLeft='8px';
-  bar.appendChild(inp); bar.appendChild(ok); bar.appendChild(no); box.appendChild(bar);
+  bar.appendChild(ok); bar.appendChild(no); box.appendChild(bar);
+  var msg=document.createElement('div'); msg.className='rol'; msg.style.marginTop='6px'; box.appendChild(msg);
   no.addEventListener('click',function(){ box.style.display='none'; btn.disabled=false; });
+  function parseLink(v){
+    v=(v||'').trim();
+    var mi=v.match(/\/d\/([A-Za-z0-9_-]{20,})/);
+    var mg=v.match(/[#?&]gid=(\d+)/);
+    return {id:mi?mi[1]:'', gid:mg?mg[1]:''};
+  }
   ok.addEventListener('click',function(){
-    var v=(inp.value||'').trim();
-    var m=v.match(/\/d\/([A-Za-z0-9_-]{20,})/);
-    var id=m?m[1]:(/^[A-Za-z0-9_-]{20,}$/.test(v)?v:'');
-    if(!id){ inp.style.borderColor='#a33'; return; }
-    setKV('gantt_sheet',{id:id,por:firmaVal(),at:new Date().toISOString()});
+    var a=parseLink(inpV.value), b=parseLink(inpE.value);
+    if(!a.id||!a.gid||!b.gid){ msg.textContent='Falta algo: cada enlace tiene que incluir /d/…(ID) y #gid=…(número de pestaña).'; return; }
+    if(b.id&&b.id!==a.id){ msg.textContent='Los dos enlaces tienen que ser de la misma planilla.'; return; }
+    if(a.gid===b.gid){ msg.textContent='Los dos enlaces apuntan a la misma pestaña (mismo gid). Cambiá de pestaña antes de copiar el segundo enlace.'; return; }
+    setKV('gantt_sheet',{id:a.id,gidV:a.gid,gidE:b.gid,por:firmaVal(),at:new Date().toISOString()});
     syncGantt();
   });
 }
 function syncGantt(){
   var box=$('#syncGBox'), btn=$('#btnSyncG');
-  var cfg=KV['gantt_sheet'], id=cfg&&cfg.id?cfg.id:'';
-  if(!id){ askGanttSheet(); return; }
+  var cfg=KV['gantt_sheet']||{};
+  if(!cfg.id||!cfg.gidV||!cfg.gidE){ askGanttSheet(); return; }
   btn.disabled=true; box.style.display='block';
   box.innerHTML='<span class="rol">Leyendo la planilla de Gantts…</span>';
-  Promise.all(['GanttVentiladores','GanttEND'].map(function(tab){
-    return fetch(gvizUrl(id,tab)).then(function(r){ return r.ok?r.text():null; }).catch(function(){ return null; });
+  Promise.all([cfg.gidV,cfg.gidE].map(function(gid){
+    return fetch(csvUrl(cfg.id,gid)).then(function(r){ return r.ok?r.text():null; }).catch(function(){ return null; });
   })).then(function(ts){
     var oks=[], errs=[];
     [['V',ts[0],'Ventiladores'],['E',ts[1],'END']].forEach(function(par){
@@ -2147,7 +2162,7 @@ function syncGantt(){
     });
     var html='';
     if(oks.length)html+='<b>Gantt actualizado y publicado para todos.</b> '+oks.join(' · ')+'.<br><span class="rol">⚠ Las marcas de avance quedan atadas al equipo y al orden de sus barras: si en la planilla cambió el nombre de un equipo o se agregaron/quitaron barras, revisá sus marcas.</span>';
-    if(errs.length)html+=(html?'<br>':'')+'<span class="rol">No pude leer: '+errs.join(' · ')+'. Verificá el nombre de la pestaña y que la planilla esté compartida como «Cualquier persona con el enlace: Lector».</span>';
+    if(errs.length)html+=(html?'<br>':'')+'<span class="rol">No pude leer: '+errs.join(' · ')+'. Verificá que la planilla esté compartida como «Cualquier persona con el enlace: Lector» y que los enlaces guardados apunten a las pestañas correctas.</span>';
     if(errs.length===2)html+='<br><span class="rol">Si el enlace guardado es incorrecto, tocá «Cambiar planilla».</span>';
     box.innerHTML=html||'<span class="rol">Sin datos.</span>';
     var bar=document.createElement('div'); bar.style.marginTop='8px';
