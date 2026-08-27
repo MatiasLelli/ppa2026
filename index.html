@@ -936,7 +936,45 @@ body.readonly select.pn-sel,body.readonly input.pn-inp{pointer-events:none;opaci
   <div id="syncHBox" style="display:none;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px"></div>
   <div class="p-tools" id="hFrentes" style="margin-bottom:8px"></div>
   <div class="p-tools" id="hFilters" style="margin-bottom:8px"></div>
-  <div style="margin-bottom:14px"><button class="btn-min" id="expMov" style="float:right">⬇ Movimientos CSV</button><input type="search" id="hBuscar" placeholder="Buscar ítem…" style="font-family:var(--fb);font-size:13.5px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:4px;padding:8px 13px;width:min(360px,100%)"></div>
+  <div class="p-tools" id="hVehic" style="margin-bottom:8px"></div>
+  <div id="remitoPick" style="display:none;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:12px"></div>
+  <style>
+  #remitoWrap{position:fixed;inset:0;z-index:9000;background:#fff;overflow:auto;padding:20px 16px 60px;color:#1a1a1a}
+  #remitoDoc{max-width:860px;margin:0 auto;font-family:Georgia,'Times New Roman',serif;font-size:12.5px;line-height:1.35;color:#1a1a1a}
+  .rem-tools{max-width:860px;margin:0 auto 14px;display:flex;gap:10px;justify-content:flex-end}
+  .rem-hd{border-bottom:2.5px solid #1a1a1a;padding-bottom:10px;margin-bottom:14px}
+  .rem-marca{font-size:11px;letter-spacing:.22em;font-weight:700}
+  .rem-tit{font-size:14px;font-weight:700;margin:4px 0 8px}
+  .rem-veh{font-size:22px;font-weight:700;margin:2px 0 10px}
+  .rem-campos{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:12px}
+  .rem-campos i{display:inline-block;min-width:170px;border-bottom:1px solid #555}
+  .rem-sec{margin:14px 0}
+  .rem-caja{display:flex;justify-content:space-between;align-items:baseline;border:1px solid #444;border-bottom:0;padding:6px 9px;font-weight:700;font-size:13px;letter-spacing:.04em}
+  .rem-vfy{font-weight:400;font-size:12px}
+  table.rem-t{width:100%;border-collapse:collapse;font-size:11.5px}
+  .rem-t th,.rem-t td{border:1px solid #666;padding:4px 6px;text-align:left;vertical-align:top}
+  .rem-t thead{display:table-header-group}
+  .rem-t th{font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+  .rem-t tr{page-break-inside:avoid}
+  .rem-ck{width:22px;text-align:center!important;font-size:12px}
+  .rem-c{width:44px;text-align:center!important}
+  .rem-pend{font-size:10px;font-weight:700;white-space:nowrap}
+  .rem-sub{text-align:right;font-size:11px;margin:3px 0 0;font-style:italic}
+  .rem-tot{margin:16px 0 8px;font-weight:700;font-size:13px;border-top:2px solid #1a1a1a;padding-top:8px}
+  .rem-firmas{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;margin:34px 0 10px}
+  .rem-firma{text-align:center;font-size:11px}
+  .rem-firma .rem-linea{border-bottom:1px solid #333;height:34px;margin-bottom:5px}
+  .rem-firma b{display:block;margin-bottom:4px}
+  .rem-firma span{display:block;margin-top:6px;text-align:left}
+  .rem-leyenda{font-size:10.5px;font-style:italic;margin-top:8px}
+  @media print{
+    body.remito-open>*:not(#remitoWrap){display:none!important}
+    #remitoWrap{position:static!important;overflow:visible!important;padding:0!important;background:#fff}
+    .rem-tools{display:none!important}
+    @page{size:A4;margin:13mm}
+  }
+  </style>
+  <div style="margin-bottom:14px"><button class="btn-min" id="expMov" style="float:right">⬇ Movimientos CSV</button><button class="btn-min" id="btnRemito" style="float:right;margin-right:8px">🖨 Remito por vehículo</button><input type="search" id="hBuscar" placeholder="Buscar ítem…" style="font-family:var(--fb);font-size:13.5px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:4px;padding:8px 13px;width:min(360px,100%)"></div>
   <div class="tbl"><table id="hTable" style="min-width:720px"></table></div>
  </div>
  <!-- ---------- ROPA Y EPP ---------- -->
@@ -1742,7 +1780,8 @@ function loadAct(){
 var PANOL=[]; try{ PANOL=JSON.parse(document.getElementById('panol-seed').textContent); }catch(e){}
 var PANOL0=PANOL; /* seed embebido original, respaldo si se borra el kv */
 var UBIC=['—','Pañol','Búnker END','Campo','Base','Vehículo'];
-var pFr='todos', pEst='todos', pQ='';
+var pFr='todos', pEst='todos', pQ='', pVeh='todos';
+function effTr(it){ var pv=KV['pan:'+it.id]||{}; var t=nrm(pv.tr!=null?pv.tr:(it.tr||'')); return t==='—'?'':t; }
 function estKey(est){
   var s=(est||'').toLowerCase();
   if(/hoy|sin cotizar|comprar ahora/.test(s)) return 'crit';
@@ -1770,6 +1809,21 @@ function buildPanolFilters(){
     b.addEventListener('click',function(){pEst=p[0];buildPanolFilters();drawPanol();});
     eEl.appendChild(b);
   });
+  var vEl=$('#hVehic');
+  if(vEl){
+    var vcounts={}, sinV=0;
+    PANOL.forEach(function(it){ var v=effTr(it); if(v)vcounts[v]=(vcounts[v]||0)+1; else sinV++; });
+    vEl.innerHTML='';
+    var vlist=[['todos','🚚 Vehículo: todos']];
+    Object.keys(vcounts).sort().forEach(function(v){ vlist.push([v, v+' ('+vcounts[v]+')']); });
+    vlist.push(['sin','Sin vehículo ('+sinV+')']);
+    vlist.forEach(function(p){
+      var b=document.createElement('button'); b.className='p-filter'+(p[0]===pVeh?' on':'');
+      b.textContent=p[1];
+      b.addEventListener('click',function(){pVeh=p[0];buildPanolFilters();drawPanol();});
+      vEl.appendChild(b);
+    });
+  }
 }
 function prestamosDe(id){ return MOV.filter(function(m){return m.item_id===id&&!m.devolucion;}); }
 function hhDe(ts){ try{var d=new Date(ts);return pad(d.getDate())+'/'+pad(d.getMonth()+1)+' '+pad(d.getHours())+':'+pad(d.getMinutes());}catch(e){return '';} }
@@ -1821,6 +1875,7 @@ function drawPanol(){
     if(pFr!=='todos'&&it.fr!==pFr)return;
     if(pEst==='enuso'){ if(!prestamosDe(it.id).length)return; }
     else if(pEst!=='todos'&&estKey(it.est)!==pEst)return;
+    if(pVeh!=='todos'){ var vv=effTr(it); if(pVeh==='sin'){ if(vv)return; } else if(vv!==pVeh)return; }
     if(pQ && (it.it+' '+it.esp+' '+it.cat).toLowerCase().indexOf(pQ)<0)return;
     shown++;
     var catLabel=(pFr==='todos'?it.fr+' · ':'')+it.cat;
@@ -2175,6 +2230,90 @@ function syncGantt(){
   });
 }
 
+/* ============ remito por vehículo ============ */
+function remEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function cajaRank(c){
+  var s=nrm(c);
+  if(/^caja/i.test(s))return 0;
+  if(/^\d/.test(s))return 1;
+  if(/^individual$/i.test(s))return 3;
+  return 2;
+}
+function remTabla(items){
+  var h='<table class="rem-t"><thead><tr><th class="rem-ck">☐</th><th>Ítem</th><th class="rem-c">Cant.</th><th>Especificación</th><th>Observaciones</th></tr></thead><tbody>';
+  items.forEach(function(it){
+    var pend=estKey(it.est)!=='ok'?' <span class="rem-pend">⚠ pendiente</span>':'';
+    h+='<tr><td class="rem-ck">☐</td><td><b>'+remEsc(it.it)+'</b>'+pend+'</td><td class="rem-c">'+remEsc(it.cant||'')+'</td><td>'+remEsc(it.esp||'')+'</td><td>'+remEsc(it.obs||'')+'</td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+function buildRemitoHTML(veh){
+  var items=PANOL.filter(function(it){return effTr(it)===veh;});
+  var porCaja={}, sueltos=[];
+  items.forEach(function(it){ var c=nrm(it.ubf); if(c){(porCaja[c]=porCaja[c]||[]).push(it);} else sueltos.push(it); });
+  var cajas=Object.keys(porCaja).sort(function(a,b){
+    var ra=cajaRank(a),rb=cajaRank(b); if(ra!==rb)return ra-rb;
+    return a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'});
+  });
+  var enCaja=items.length-sueltos.length;
+  var h='<div class="rem-hd"><div class="rem-marca">LABTESA — SERSOL</div>'
+   +'<div class="rem-tit">REMITO / CHECKLIST DE TRANSPORTE · PARADA DE PLANTA AUSTIN POWDER 2026</div>'
+   +'<div class="rem-veh">Vehículo: '+remEsc(veh)+'</div>'
+   +'<div class="rem-campos">'
+   +'<span>Conductor: <i></i></span><span>Acompañante: <i></i></span>'
+   +'<span>Fecha: <i></i></span><span>Remito N°: <i></i></span>'
+   +'<span>Origen: <i></i></span><span>Destino: <i></i></span>'
+   +'</div></div>';
+  cajas.forEach(function(c){
+    var arr=porCaja[c];
+    h+='<div class="rem-sec"><div class="rem-caja"><span>'+remEsc(c)+'</span><span class="rem-vfy">☐ Caja verificada y cerrada</span></div>'
+      +remTabla(arr)+'<div class="rem-sub">Subtotal: '+arr.length+' ítems</div></div>';
+  });
+  if(sueltos.length){
+    h+='<div class="rem-sec"><div class="rem-caja"><span>SUELTOS EN EL VEHÍCULO</span></div>'
+      +remTabla(sueltos)+'<div class="rem-sub">Subtotal: '+sueltos.length+' ítems</div></div>';
+  }
+  h+='<div class="rem-tot">Total: '+cajas.length+' cajas · '+enCaja+' ítems en caja · '+sueltos.length+' sueltos</div>';
+  h+='<div class="rem-firmas">'+['Entrega','Recibe','Conductor'].map(function(r){
+    return '<div class="rem-firma"><div class="rem-linea"></div><b>'+r+'</b><span>Aclaración: ____________________</span><span>DNI: ____________________</span></div>';
+  }).join('')+'</div>';
+  h+='<div class="rem-leyenda">Este documento funciona como checklist de carga en origen y de descarga en destino. Marcar cada ítem al verificarlo.</div>';
+  return h;
+}
+function cerrarRemito(){
+  var w=document.getElementById('remitoWrap'); if(w)w.parentNode.removeChild(w);
+  document.body.classList.remove('remito-open');
+}
+function abrirRemito(veh){
+  cerrarRemito();
+  var w=document.createElement('div'); w.id='remitoWrap';
+  w.innerHTML='<div class="rem-tools"><button class="btn-min" id="remPrint">🖨 Imprimir / guardar PDF</button><button class="btn-min" id="remCerrar">× Cerrar</button></div>'
+    +'<div id="remitoDoc">'+buildRemitoHTML(veh)+'</div>';
+  document.body.appendChild(w);
+  document.body.classList.add('remito-open');
+  w.querySelector('#remCerrar').addEventListener('click',cerrarRemito);
+  w.querySelector('#remPrint').addEventListener('click',function(){window.print();});
+  if(!window.__remitoTest)setTimeout(function(){window.print();},400);
+}
+function pickRemito(){
+  var box=$('#remitoPick'); if(!box)return;
+  if(box.style.display==='block'){ box.style.display='none'; return; }
+  var vcounts={};
+  PANOL.forEach(function(it){ var v=effTr(it); if(v)vcounts[v]=(vcounts[v]||0)+1; });
+  box.innerHTML='';
+  var lab=document.createElement('span'); lab.className='rol'; lab.textContent='Remito de: ';
+  box.appendChild(lab);
+  Object.keys(vcounts).sort().forEach(function(v){
+    var b=document.createElement('button'); b.className='p-filter'; b.textContent=v+' ('+vcounts[v]+')';
+    b.addEventListener('click',function(){ box.style.display='none'; abrirRemito(v); });
+    box.appendChild(b);
+  });
+  var no=document.createElement('button'); no.className='p-filter'; no.textContent='Cancelar';
+  no.addEventListener('click',function(){box.style.display='none';});
+  box.appendChild(no);
+  box.style.display='block';
+}
+
 /* ============ aplicar todo ============ */
 function applyAll(){
   renderExtras();
@@ -2358,6 +2497,8 @@ function bindEvents(){
   if(hq)hq.addEventListener('input',function(){ pQ=hq.value.trim().toLowerCase(); drawPanol(); });
   var bsh=$('#btnSyncH');
   if(bsh)bsh.addEventListener('click',syncHerr);
+  var brm=$('#btnRemito');
+  if(brm)brm.addEventListener('click',pickRemito);
   var bsg=$('#btnSyncG');
   if(bsg)bsg.addEventListener('click',syncGantt);
   try{ $('#firma').value=localStorage.getItem('ppa-firma')||''; }catch(e){}
