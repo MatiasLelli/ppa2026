@@ -783,6 +783,12 @@ body.readonly select.pn-sel,body.readonly input.pn-inp{pointer-events:none;opaci
  <h2>Gantt de ejecución</h2>
  <p class="sec-sub">Plan detallado por equipo y por fase de cada frente. El de <b>ventiladores</b> reproduce el Gantt Rev. 9 de Argento; el de <b>END</b> es un borrador propuesto a partir del pliego 90-PCO-RQ-009 Rev. 1, para validar con Caputo Román y APASA; los <b>MOCs</b> se desglosarán por equipo.</p>
 
+ <div style="margin-bottom:12px">
+  <button class="btn-min" id="btnSyncG">⟳ Actualizar Gantt desde la planilla</button>
+  <span class="rol" id="syncGInfo" style="margin-left:10px"></span>
+ </div>
+ <div id="syncGBox" style="display:none;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px"></div>
+
  <div class="g-tabs">
   <button class="g-tab on" data-g="gv">Ventiladores</button>
   <button class="g-tab" data-g="ge">END</button>
@@ -923,6 +929,11 @@ body.readonly select.pn-sel,body.readonly input.pn-inp{pointer-events:none;opaci
   <div class="g-links">
    <a class="g-link" href="https://docs.google.com/spreadsheets/d/1aKmeOqI2nmlYszsjU8zdom6fCJn-fA6i/edit?gid=1077869786#gid=1077869786" target="_blank" rel="noopener">↗ Listado unificado <span class="rol">· precios y proveedores · Google Sheets</span></a>
   </div>
+  <div style="margin-bottom:10px">
+   <button class="btn-min" id="btnSyncH">⟳ Actualizar desde la planilla</button>
+   <span class="rol" id="syncHInfo" style="margin-left:10px"></span>
+  </div>
+  <div id="syncHBox" style="display:none;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px"></div>
   <div class="p-tools" id="hFrentes" style="margin-bottom:8px"></div>
   <div class="p-tools" id="hFilters" style="margin-bottom:8px"></div>
   <div style="margin-bottom:14px"><button class="btn-min" id="expMov" style="float:right">⬇ Movimientos CSV</button><input type="search" id="hBuscar" placeholder="Buscar ítem…" style="font-family:var(--fb);font-size:13.5px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:4px;padding:8px 13px;width:min(360px,100%)"></div>
@@ -1053,6 +1064,7 @@ function render(id,legId,d0,d1,rows){
 }
 var LEGN={VIB:'VIB · vibraciones',DES:'DES · desarme',END:'END · ensayos no destructivos',REC:'REC · recambios',ARM:'ARM · armado',ALI:'ALI · alineación',BAL:'BAL · balanceo',
 VT:'VT · inspección visual',PT:'PT · líquidos penetrantes',RT:'RT · radiografía',UT:'UT · ultrasonido',RM:'RM · réplicas',DUR:'DUR · dureza/indentación',LOG:'LOG · búnker y permisos',DOC:'DOC · informes'};
+window.PPA_G={render:render};
 
 /* -------- Ventiladores · Gantt Rev. 9 -------- */
 render('ganttV','legV',1,13,[
@@ -1702,6 +1714,11 @@ function actLabel(k){
   if(k.indexOf('gs:ganttv')===0||k.indexOf('gs:ganttV')===0)return 'Gantt ventiladores';
   if(k.indexOf('gs:ganttE')===0||k.indexOf('gs:gantte')===0)return 'Gantt END';
   if(k.indexOf('parte:')===0)return 'Parte diario';
+  if(k==='panolseed')return 'Listado de herramientas · sincronizado desde la planilla';
+  if(k==='gantt:V')return 'Gantt ventiladores · estructura actualizada desde la planilla';
+  if(k==='gantt:E')return 'Gantt END · estructura actualizada desde la planilla';
+  if(k==='gantt_sheet')return 'Planilla de Gantts vinculada';
+  if(k==='fase_panol')return 'Fase del listado de herramientas';
   return k;
 }
 function loadAct(){
@@ -1723,6 +1740,7 @@ function loadAct(){
 
 /* ============ pañol ============ */
 var PANOL=[]; try{ PANOL=JSON.parse(document.getElementById('panol-seed').textContent); }catch(e){}
+var PANOL0=PANOL; /* seed embebido original, respaldo si se borra el kv */
 var UBIC=['—','Pañol','Búnker END','Campo','Base','Vehículo'];
 var pFr='todos', pEst='todos', pQ='';
 function estKey(est){
@@ -1876,6 +1894,272 @@ function applyAllGs(){
   updateGanttProg();
 }
 
+/* ============ sincronización con Google Sheets ============ */
+var SHEET_H='1aKmeOqI2nmlYszsjU8zdom6fCJn-fA6i';
+function gvizUrl(id,tab){ return 'https://docs.google.com/spreadsheets/d/'+id+'/gviz/tq?tqx=out:csv&sheet='+encodeURIComponent(tab); }
+function parseCSV(text){
+  var rows=[],row=[],cur='',q=false;
+  for(var i=0;i<text.length;i++){
+    var ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else if(ch==='"')q=true;
+    else if(ch===','){row.push(cur);cur='';}
+    else if(ch==='\n'){row.push(cur);rows.push(row);row=[];cur='';}
+    else if(ch==='\r'){}
+    else cur+=ch;
+  }
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  return rows;
+}
+function nrm(s){ return String(s==null?'':s).replace(/\s+/g,' ').trim(); }
+function low(s){ return nrm(s).toLowerCase(); }
+function nCant(s){ var t=nrm(s); var m=t.match(/^(\d+)(?:[.,]0+)?$/); return m?m[1]:t; }
+function nUbf(s){ var t=nrm(s); if(/^\d+(?:[.,]0+)?$/.test(t)) return 'CAJA '+parseInt(t,10); return t; }
+function fnv8(str){ var h=0x811c9dc5; for(var i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; } return ('0000000'+h.toString(16)).slice(-8); }
+function idKey(it){ return low(it.fr)+'|'+low(it.cat)+'|'+low(it.it)+'|'+low(nCant(it.esp)); }
+function conOrdinal(items){
+  var seen={},out={};
+  items.forEach(function(it,i){
+    var k=idKey(it); seen[k]=(seen[k]||0)+1;
+    out[i]=k+'#'+seen[k];
+  });
+  return out;
+}
+function buildItemsFromCSV(rows){
+  var hi=-1, ci=null;
+  for(var i=0;i<rows.length&&i<6;i++){
+    var lr=rows[i].map(low);
+    var hasItem=lr.some(function(c){return c==='ítem'||c==='item';});
+    var hasFrente=lr.indexOf('frente')>=0;
+    if(hasItem&&hasFrente){
+      hi=i; ci={};
+      lr.forEach(function(c,j){
+        if(c.indexOf('caja')>=0||c.indexOf('físic')>=0||c.indexOf('fisic')>=0)ci.ubf=j;
+        else if(c.indexOf('ubicaci')===0)ci.orig=j;
+        else if(c.indexOf('transporte')===0)ci.tr=j;
+        else if(c.indexOf('estado')===0)ci.est=j;
+        else if(c==='ítem'||c==='item')ci.it=j;
+        else if(c==='frente')ci.fr=j;
+        else if(c.indexOf('categor')===0)ci.cat=j;
+        else if(c.indexOf('cant')===0)ci.cant=j;
+        else if(c.indexOf('especifica')===0)ci.esp=j;
+        else if(c.indexOf('observa')===0)ci.obs=j;
+      });
+      break;
+    }
+  }
+  if(hi<0||ci.it==null||ci.fr==null) return null;
+  var items=[];
+  function cell(row,j){ return j==null?'':nrm(row[j]); }
+  for(var r=hi+1;r<rows.length;r++){
+    var row=rows[r];
+    var it=cell(row,ci.it), fr=cell(row,ci.fr);
+    if(!it||!fr)continue;
+    items.push({fr:fr,cat:cell(row,ci.cat),it:it,cant:nCant(cell(row,ci.cant)),
+      esp:cell(row,ci.esp),est:cell(row,ci.est),ubf:nUbf(cell(row,ci.ubf)),
+      tr:cell(row,ci.tr),obs:cell(row,ci.obs),orig:cell(row,ci.orig)});
+  }
+  return items;
+}
+function matchIds(nuevos, viejos){
+  var oldOrd=conOrdinal(viejos), byKey={}, used={};
+  viejos.forEach(function(it,i){ byKey[oldOrd[i]]=it; });
+  var newOrd=conOrdinal(nuevos);
+  var added=[], changed=0, matchedKeys={};
+  nuevos.forEach(function(it,i){
+    var k=newOrd[i], old=byKey[k];
+    if(old){
+      it.id=old.id; matchedKeys[k]=1;
+      if(it.est!==old.est||it.ubf!==old.ubf||it.tr!==old.tr||it.cant!==old.cant||it.obs!==old.obs||it.orig!==old.orig)changed++;
+    } else {
+      var id=fnv8(k);
+      while(used[id]||viejos.some(function(o){return o.id===id;}))id=fnv8(id+'x');
+      it.id=id; added.push(it.it);
+    }
+    used[it.id]=1;
+  });
+  var removed=[];
+  viejos.forEach(function(it,i){ if(!matchedKeys[oldOrd[i]])removed.push(it.it); });
+  return {items:nuevos, added:added, removed:removed, changed:changed};
+}
+function syncInfoH(){
+  var el=$('#syncHInfo'), btn=$('#btnSyncH');
+  if(el){
+    var d=KV['panolseed'];
+    el.textContent = d&&d.at ? ('Sincronizado '+hhDe(d.at)+' · por '+(d.por||'')+' · '+(d.n||(d.items&&d.items.length)||'?')+' ítems')
+                             : 'Listado embebido original · aún sin sincronizar';
+  }
+  if(btn) btn.style.display = (KV['fase_panol']==='app') ? 'none' : '';
+}
+function adoptPanolSeed(){
+  var d=KV['panolseed'];
+  PANOL = (d&&d.items&&d.items.length) ? d.items : PANOL0;
+  syncInfoH();
+}
+function refetchPanolSeed(){
+  sb.from('kv').select('v').eq('k','panolseed').then(function(r){
+    if(r.error)return;
+    if(r.data&&r.data.length){ KV['panolseed']=r.data[0].v; } else { delete KV['panolseed']; }
+    adoptPanolSeed(); buildPanolFilters(); drawPanol();
+  });
+}
+function syncHerr(){
+  var box=$('#syncHBox'), btn=$('#btnSyncH');
+  btn.disabled=true; box.style.display='block';
+  box.innerHTML='<span class="rol">Leyendo la planilla de Google Sheets…</span>';
+  fetch(gvizUrl(SHEET_H,'Maestro'))
+  .then(function(r){ if(!r.ok)throw new Error('HTTP '+r.status); return r.text(); })
+  .then(function(txt){
+    if(/^\s*</.test(txt))throw new Error('no-csv');
+    var items=buildItemsFromCSV(parseCSV(txt));
+    if(!items)throw new Error('encabezado');
+    if(!items.length)throw new Error('vacia');
+    var res=matchIds(items, PANOL);
+    box.innerHTML='';
+    var p=document.createElement('div');
+    p.innerHTML='<b>Planilla leída: '+res.items.length+' ítems</b> (la app muestra '+PANOL.length+').<br>'+
+      'Nuevos: <b>'+res.added.length+'</b> · Eliminados: <b>'+res.removed.length+'</b> · Con cambios: <b>'+res.changed+'</b>';
+    box.appendChild(p);
+    function lista(tit,arr){
+      if(!arr.length)return;
+      var d=document.createElement('div'); d.className='rol'; d.style.marginTop='6px';
+      d.textContent=tit+': '+arr.slice(0,8).join(' · ')+(arr.length>8?(' … y '+(arr.length-8)+' más'):'');
+      box.appendChild(d);
+    }
+    lista('Se agregan',res.added); lista('Se quitan',res.removed);
+    if(res.removed.length){
+      var w=document.createElement('div'); w.className='rol'; w.style.marginTop='6px';
+      w.textContent='⚠ Los ítems quitados pierden sus préstamos y ubicación en la app. Si un ítem cambió de nombre o especificación en la planilla, acá figura como quitado + nuevo.';
+      box.appendChild(w);
+    }
+    var bar=document.createElement('div'); bar.style.marginTop='10px';
+    var ok=document.createElement('button'); ok.className='btn-min'; ok.textContent='✓ Aplicar y publicar para todos';
+    var no=document.createElement('button'); no.className='btn-min'; no.textContent='Cancelar'; no.style.marginLeft='8px';
+    bar.appendChild(ok); bar.appendChild(no); box.appendChild(bar);
+    no.addEventListener('click',function(){ box.style.display='none'; btn.disabled=false; });
+    ok.addEventListener('click',function(){
+      ok.disabled=true;
+      PANOL=res.items;
+      setKV('panolseed',{items:res.items,n:res.items.length,at:new Date().toISOString(),por:firmaVal()});
+      buildPanolFilters(); drawPanol(); syncInfoH();
+      box.style.display='none'; btn.disabled=false;
+    });
+  })
+  .catch(function(e){
+    console.error('syncHerr',e);
+    box.innerHTML='<b>No pude leer la planilla.</b><br><span class="rol">Verificá que el listado unificado esté compartido como «Cualquier persona con el enlace: Lector» en Google Sheets (Compartir → Acceso general) y probá de nuevo. Si el problema sigue, avisale a Matías.</span>';
+    btn.disabled=false;
+  });
+}
+/* ---- gantt desde planilla ---- */
+function rowsToGantt(rows){
+  var hi=-1, ci=null;
+  for(var i=0;i<rows.length&&i<6;i++){
+    var lr=rows[i].map(low);
+    if(lr.indexOf('fases')>=0&&lr.indexOf('desde')>=0){
+      hi=i; ci={};
+      lr.forEach(function(c,j){
+        if(c==='área'||c==='area')ci.area=j;
+        else if(c.indexOf('equipo')===0)ci.eq=j;
+        else if(c.indexOf('detalle')===0)ci.det=j;
+        else if(c==='fases')ci.f=j;
+        else if(c==='desde')ci.d1=j;
+        else if(c==='hasta')ci.d2=j;
+        else if(c.indexOf('confirmar')>=0)ci.tbc=j;
+      });
+      break;
+    }
+  }
+  if(hi<0||ci.eq==null)return null;
+  var out=[],lastA=null,lastEq=null,cur=null,dmin=99,dmax=0,neq=0;
+  for(var r=hi+1;r<rows.length;r++){
+    var row=rows[r];
+    var eq=nrm(row[ci.eq]);
+    var fas=nrm(row[ci.f]).toUpperCase().replace(/\s+/g,'');
+    var d1=parseInt(nrm(row[ci.d1]),10), d2=parseInt(nrm(row[ci.d2]),10);
+    if(!eq||!fas||isNaN(d1))continue;
+    if(isNaN(d2)||d2<d1)d2=d1;
+    d1=Math.max(1,Math.min(30,d1)); d2=Math.max(d1,Math.min(30,d2));
+    var area=ci.area!=null?nrm(row[ci.area]):'';
+    if(area&&area!==lastA){ out.push({area:area}); lastA=area; lastEq=null; }
+    if(eq!==lastEq){ cur=[eq, ci.det!=null?nrm(row[ci.det]):'', []]; out.push(cur); lastEq=eq; neq++; }
+    var seg=[d1,d2,fas];
+    if(ci.tbc!=null&&nrm(row[ci.tbc]))seg.push(1);
+    cur[2].push(seg);
+    if(d1<dmin)dmin=d1; if(d2>dmax)dmax=d2;
+  }
+  if(!neq)return null;
+  return {rows:out,d0:dmin,d1:dmax,neq:neq};
+}
+function applyGantt(w){
+  var d=KV['gantt:'+w];
+  if(!d||!d.rows||!window.PPA_G)return;
+  window.PPA_G.render(w==='V'?'ganttV':'ganttE', w==='V'?'legV':'legE', d.d0, d.d1, d.rows);
+  applyAllGs();
+  syncInfoG();
+}
+function syncInfoG(){
+  var el=$('#syncGInfo'); if(!el)return;
+  var v=KV['gantt:V'], e=KV['gantt:E'], src=(v&&v.at)?v:((e&&e.at)?e:null);
+  el.textContent = src ? ('Última actualización: '+hhDe(src.at)+' · por '+(src.por||'')) : 'Gantts embebidos (Rev. 9 / borrador END) · aún sin planilla vinculada';
+}
+function askGanttSheet(){
+  var box=$('#syncGBox'), btn=$('#btnSyncG');
+  box.style.display='block'; box.innerHTML='';
+  var p=document.createElement('div');
+  p.innerHTML='<b>Vinculá la planilla de Gantts.</b><br><span class="rol">Pegá el enlace (o el ID) de la planilla «PPA2026 – Gantts» de Google Sheets. Tiene que tener las pestañas <b>GanttVentiladores</b> y <b>GanttEND</b>, y estar compartida como «Cualquier persona con el enlace: Lector». Se guarda una sola vez, para todos.</span>';
+  box.appendChild(p);
+  var bar=document.createElement('div'); bar.style.marginTop='8px';
+  var inp=document.createElement('input'); inp.type='text'; inp.placeholder='https://docs.google.com/spreadsheets/d/…';
+  inp.style.cssText='font-family:var(--fb);font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:7px 10px;width:min(420px,90%)';
+  var ok=document.createElement('button'); ok.className='btn-min'; ok.textContent='Guardar y actualizar'; ok.style.marginLeft='8px';
+  var no=document.createElement('button'); no.className='btn-min'; no.textContent='Cancelar'; no.style.marginLeft='8px';
+  bar.appendChild(inp); bar.appendChild(ok); bar.appendChild(no); box.appendChild(bar);
+  no.addEventListener('click',function(){ box.style.display='none'; btn.disabled=false; });
+  ok.addEventListener('click',function(){
+    var v=(inp.value||'').trim();
+    var m=v.match(/\/d\/([A-Za-z0-9_-]{20,})/);
+    var id=m?m[1]:(/^[A-Za-z0-9_-]{20,}$/.test(v)?v:'');
+    if(!id){ inp.style.borderColor='#a33'; return; }
+    setKV('gantt_sheet',{id:id,por:firmaVal(),at:new Date().toISOString()});
+    syncGantt();
+  });
+}
+function syncGantt(){
+  var box=$('#syncGBox'), btn=$('#btnSyncG');
+  var cfg=KV['gantt_sheet'], id=cfg&&cfg.id?cfg.id:'';
+  if(!id){ askGanttSheet(); return; }
+  btn.disabled=true; box.style.display='block';
+  box.innerHTML='<span class="rol">Leyendo la planilla de Gantts…</span>';
+  Promise.all(['GanttVentiladores','GanttEND'].map(function(tab){
+    return fetch(gvizUrl(id,tab)).then(function(r){ return r.ok?r.text():null; }).catch(function(){ return null; });
+  })).then(function(ts){
+    var oks=[], errs=[];
+    [['V',ts[0],'Ventiladores'],['E',ts[1],'END']].forEach(function(par){
+      var w=par[0], txt=par[1], nom=par[2];
+      if(txt==null||/^\s*</.test(txt)){ errs.push(nom); return; }
+      var g=rowsToGantt(parseCSV(txt));
+      if(!g){ errs.push(nom+' (sin filas válidas)'); return; }
+      g.at=new Date().toISOString(); g.por=firmaVal();
+      setKV('gantt:'+w,g);
+      applyGantt(w);
+      oks.push(nom+': '+g.neq+' equipos');
+    });
+    var html='';
+    if(oks.length)html+='<b>Gantt actualizado y publicado para todos.</b> '+oks.join(' · ')+'.<br><span class="rol">⚠ Las marcas de avance quedan atadas al equipo y al orden de sus barras: si en la planilla cambió el nombre de un equipo o se agregaron/quitaron barras, revisá sus marcas.</span>';
+    if(errs.length)html+=(html?'<br>':'')+'<span class="rol">No pude leer: '+errs.join(' · ')+'. Verificá el nombre de la pestaña y que la planilla esté compartida como «Cualquier persona con el enlace: Lector».</span>';
+    if(errs.length===2)html+='<br><span class="rol">Si el enlace guardado es incorrecto, tocá «Cambiar planilla».</span>';
+    box.innerHTML=html||'<span class="rol">Sin datos.</span>';
+    var bar=document.createElement('div'); bar.style.marginTop='8px';
+    var cerrar=document.createElement('button'); cerrar.className='btn-min'; cerrar.textContent='Cerrar';
+    var camb=document.createElement('button'); camb.className='btn-min'; camb.textContent='Cambiar planilla'; camb.style.marginLeft='8px';
+    bar.appendChild(cerrar); bar.appendChild(camb); box.appendChild(bar);
+    cerrar.addEventListener('click',function(){ box.style.display='none'; });
+    camb.addEventListener('click',function(){ btn.disabled=false; askGanttSheet(); });
+    btn.disabled=false;
+  });
+}
+
 /* ============ aplicar todo ============ */
 function applyAll(){
   renderExtras();
@@ -1912,6 +2196,10 @@ function applyKey(k){
   else if(k.indexOf('pan:')===0){ applyPan(k.slice(4)); }
   else if(k.indexOf('gs:')===0){ applyGs(k.slice(3)); }
   else if(k.indexOf('parte:')===0){ renderPartes(); }
+  else if(k==='panolseed'){ refetchPanolSeed(); }
+  else if(k==='gantt:V'){ applyGantt('V'); }
+  else if(k==='gantt:E'){ applyGantt('E'); }
+  else if(k==='fase_panol'){ syncInfoH(); }
 }
 
 /* ============ eventos ============ */
@@ -2053,6 +2341,10 @@ function bindEvents(){
   });
   var hq=$('#hBuscar');
   if(hq)hq.addEventListener('input',function(){ pQ=hq.value.trim().toLowerCase(); drawPanol(); });
+  var bsh=$('#btnSyncH');
+  if(bsh)bsh.addEventListener('click',syncHerr);
+  var bsg=$('#btnSyncG');
+  if(bsg)bsg.addEventListener('click',syncGantt);
   try{ $('#firma').value=localStorage.getItem('ppa-firma')||''; }catch(e){}
   $('#firma').addEventListener('change',function(){ try{localStorage.setItem('ppa-firma',$('#firma').value.trim());}catch(e){} });
   $('#nvFecha').value=hoyInput();
@@ -2223,6 +2515,8 @@ function start(){
     clearTimeout(slow);
     if(res[0].error||res[1].error){ console.error(res[0].error||res[1].error); setChip('err','Sin conexión a la base'); return; }
     (res[0].data||[]).forEach(function(r){KV[r.k]=r.v;});
+    adoptPanolSeed();
+    applyGantt('V'); applyGantt('E'); syncInfoG();
     NOV=res[1].data||[];
     REG=(res[2]&&res[2].data)||[];
     ADI=(res[3]&&res[3].data)||[];
